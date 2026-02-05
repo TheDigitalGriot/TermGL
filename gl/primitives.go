@@ -6,8 +6,10 @@ import (
 
 // NewCube creates a unit cube centered at the origin.
 // Returns a mesh with 12 triangles (2 per face).
+// Each face has proper UV coordinates for texture mapping.
 //
 // Ported from ascii-graphics-3d/src/Mesh.cpp:248-313
+// Enhanced with UV coordinates matching TermGL-C-Plus.
 func NewCube() *Mesh {
 	m := NewMesh()
 
@@ -31,41 +33,53 @@ func NewCube() *Mesh {
 	top := math.Vec3{X: 0, Y: 1, Z: 0}
 	bottom := math.Vec3{X: 0, Y: -1, Z: 0}
 
-	// Helper to create a triangle
-	makeTri := func(p0, p1, p2 math.Vec3, n math.Vec3) Triangle {
+	// Standard quad UVs (0-1 range)
+	uv00 := math.Vec2{X: 0, Y: 0} // bottom-left
+	uv10 := math.Vec2{X: 1, Y: 0} // bottom-right
+	uv01 := math.Vec2{X: 0, Y: 1} // top-left
+	uv11 := math.Vec2{X: 1, Y: 1} // top-right
+
+	// Helper to create a triangle with UVs
+	makeTri := func(p0, p1, p2 math.Vec3, n math.Vec3, uv0, uv1, uv2 math.Vec2) Triangle {
 		return Triangle{
 			Vertices: [3]Vertex{
-				{Position: p0, Normal: n},
-				{Position: p1, Normal: n},
-				{Position: p2, Normal: n},
+				{Position: p0, Normal: n, UV: uv0},
+				{Position: p1, Normal: n, UV: uv1},
+				{Position: p2, Normal: n, UV: uv2},
 			},
 			FaceNormal: n,
 		}
 	}
 
-	// Front face (z = 1)
-	m.AddTriangle(makeTri(v[4], v[5], v[6], front))
-	m.AddTriangle(makeTri(v[4], v[6], v[7], front))
+	// Front face (z = 1) - looking at face from outside
+	// v4=bottom-left, v5=bottom-right, v6=top-right, v7=top-left
+	m.AddTriangle(makeTri(v[4], v[5], v[6], front, uv00, uv10, uv11))
+	m.AddTriangle(makeTri(v[4], v[6], v[7], front, uv00, uv11, uv01))
 
-	// Back face (z = -1)
-	m.AddTriangle(makeTri(v[1], v[0], v[3], back))
-	m.AddTriangle(makeTri(v[1], v[3], v[2], back))
+	// Back face (z = -1) - looking at face from outside (reversed winding)
+	// v1=bottom-left, v0=bottom-right, v3=top-right, v2=top-left
+	m.AddTriangle(makeTri(v[1], v[0], v[3], back, uv00, uv10, uv11))
+	m.AddTriangle(makeTri(v[1], v[3], v[2], back, uv00, uv11, uv01))
 
-	// Left face (x = -1)
-	m.AddTriangle(makeTri(v[0], v[4], v[7], left))
-	m.AddTriangle(makeTri(v[0], v[7], v[3], left))
+	// Left face (x = -1) - looking at face from outside
+	// v0=bottom-left, v4=bottom-right, v7=top-right, v3=top-left
+	m.AddTriangle(makeTri(v[0], v[4], v[7], left, uv00, uv10, uv11))
+	m.AddTriangle(makeTri(v[0], v[7], v[3], left, uv00, uv11, uv01))
 
-	// Right face (x = 1)
-	m.AddTriangle(makeTri(v[5], v[1], v[2], right))
-	m.AddTriangle(makeTri(v[5], v[2], v[6], right))
+	// Right face (x = 1) - looking at face from outside
+	// v5=bottom-left, v1=bottom-right, v2=top-right, v6=top-left
+	m.AddTriangle(makeTri(v[5], v[1], v[2], right, uv00, uv10, uv11))
+	m.AddTriangle(makeTri(v[5], v[2], v[6], right, uv00, uv11, uv01))
 
-	// Top face (y = 1)
-	m.AddTriangle(makeTri(v[7], v[6], v[2], top))
-	m.AddTriangle(makeTri(v[7], v[2], v[3], top))
+	// Top face (y = 1) - looking at face from above
+	// v7=bottom-left, v6=bottom-right, v2=top-right, v3=top-left
+	m.AddTriangle(makeTri(v[7], v[6], v[2], top, uv00, uv10, uv11))
+	m.AddTriangle(makeTri(v[7], v[2], v[3], top, uv00, uv11, uv01))
 
-	// Bottom face (y = -1)
-	m.AddTriangle(makeTri(v[0], v[1], v[5], bottom))
-	m.AddTriangle(makeTri(v[0], v[5], v[4], bottom))
+	// Bottom face (y = -1) - looking at face from below
+	// v0=bottom-left, v1=bottom-right, v5=top-right, v4=top-left
+	m.AddTriangle(makeTri(v[0], v[1], v[5], bottom, uv00, uv10, uv11))
+	m.AddTriangle(makeTri(v[0], v[5], v[4], bottom, uv00, uv11, uv01))
 
 	return m
 }

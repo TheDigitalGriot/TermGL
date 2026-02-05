@@ -31,14 +31,26 @@ func GrayFloat(v float64) Color {
 	return RGB(b, b, b)
 }
 
-// Common colors
+// Common colors (standard ANSI)
 var (
-	Black   = RGB(0, 0, 0)
-	White   = RGB(255, 255, 255)
-	Red     = RGB(255, 0, 0)
-	Green   = RGB(0, 255, 0)
-	Blue    = RGB(0, 0, 255)
-	Yellow  = RGB(255, 255, 0)
-	Cyan    = RGB(0, 255, 255)
-	Magenta = RGB(255, 0, 255)
+	Black   = lipgloss.Color("0")
+	Red     = lipgloss.Color("1")
+	Green   = lipgloss.Color("2")
+	Yellow  = lipgloss.Color("3")
+	Blue    = lipgloss.Color("4")
+	Magenta = lipgloss.Color("5")
+	Cyan    = lipgloss.Color("6")
+	White   = lipgloss.Color("7")
+)
+
+// Bright/High-intensity colors (ANSI 8-15)
+var (
+	BrightBlack   = lipgloss.Color("8")
+	BrightRed     = lipgloss.Color("9")
+	BrightGreen   = lipgloss.Color("10")
+	BrightYellow  = lipgloss.Color("11")
+	BrightBlue    = lipgloss.Color("12")
+	BrightMagenta = lipgloss.Color("13")
+	BrightCyan    = lipgloss.Color("14")
+	BrightWhite   = lipgloss.Color("15")
 )

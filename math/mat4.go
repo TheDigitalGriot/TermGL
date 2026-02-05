@@ -30,8 +30,7 @@ func Zero() Mat4 {
 // fovDegrees is the vertical field of view in degrees.
 // aspect is the aspect ratio (width / height).
 // near and far are the clipping planes.
-//
-// Ported from ascii-graphics-3d/src/agm.cpp:15-26
+// Uses standard OpenGL-style matrix (NDC Z in [-1, 1]).
 func Perspective(fovDegrees, aspect, near, far float64) Mat4 {
 	fovRad := (fovDegrees / 2.0) * (math.Pi / 180.0)
 	tanHalfFov := math.Tan(fovRad)
@@ -39,9 +38,9 @@ func Perspective(fovDegrees, aspect, near, far float64) Mat4 {
 	var m Mat4
 	m[0] = (1.0 / tanHalfFov) / aspect // m[0][0]
 	m[5] = 1.0 / tanHalfFov            // m[1][1]
-	m[10] = ((-2.0 * near) / (far - near)) - 1.0
-	m[14] = (-near * far) / (far - near) // m[3][2]
-	m[11] = -1.0                         // m[2][3]
+	m[10] = -(far + near) / (far - near)
+	m[11] = -2.0 * far * near / (far - near)
+	m[14] = -1.0
 
 	return m
 }
