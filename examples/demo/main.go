@@ -5,8 +5,11 @@ package main
 import (
 	"fmt"
 	"image/color"
+	"image/png"
 	"math"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -49,6 +52,9 @@ const (
 	demoTexturedCube // b - Textured cube with UV mapping (different from demoTextures)
 	demoRGBCircles   // n - 24-bit RGB gradient circles
 	demoMouseDemo    // m - Mouse position/button tracking
+
+	// External image viewer demos
+	demoViu // i - Display image using viu (external tool)
 )
 
 type tickMsg time.Time
@@ -85,6 +91,9 @@ type model struct {
 	mouseY         int         // Mouse Y position
 	mouseButton    string      // Last mouse button action
 	mandelbrotZoom float64     // Current zoom level for mandelbrot
+
+	// Viu demo state
+	viuImagePath string // Path to generated image for viu
 }
 
 func initialModel() model {
@@ -144,12 +153,36 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+	case viuFinishedMsg:
+		// viu finished, return to viu demo screen
+		return m, nil
+
 	case tea.KeyMsg:
 		// Capture key for keyboard demo (except navigation keys)
 		if m.currentDemo == demoKeyboardDemo {
 			key := msg.String()
 			if key != "esc" && key != "q" && key != "ctrl+c" {
 				m.lastKey = key
+				return m, nil
+			}
+		}
+
+		// Handle viu demo special keys
+		if m.currentDemo == demoViu {
+			switch msg.String() {
+			case "enter":
+				// Generate image and run viu
+				imgPath := m.generateViuImage()
+				if imgPath != "" {
+					return m, m.runViu(imgPath)
+				}
+				return m, nil
+			case " ":
+				// Show sample image
+				samplePath := "ref/glkitty/images/glkitty.gif"
+				if _, err := os.Stat(samplePath); err == nil {
+					return m, m.runViu(samplePath)
+				}
 				return m, nil
 			}
 		}
@@ -259,6 +292,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.frame = 0
 			m.mouseButton = "none"
 			return m, tea.EnableMouseAllMotion
+		case "i", "I":
+			m.currentDemo = demoViu
+			m.frame = 0
+			return m, nil
 		}
 
 	case tickMsg:
@@ -326,6 +363,8 @@ func (m model) View() string {
 		m.renderRGBCircles()
 	case demoMouseDemo:
 		m.renderMouseDemo()
+	case demoViu:
+		m.renderViu()
 	}
 
 	return m.canvas.String()
@@ -360,6 +399,11 @@ func (m *model) renderMenu() {
 		"                    [M] Mouse Tracking",
 	}
 
+	externalItems := []string{
+		"--- External Tools ---",
+		"[I] Viu Image Viewer",
+	}
+
 	startY := 3
 	for i, item := range items {
 		draw.PutStringCentered(m.canvas, startY+i, item, menuStyle)
@@ -368,6 +412,12 @@ func (m *model) renderMenu() {
 	startY = startY + len(items) + 1
 	for i, item := range termglCItems {
 		draw.PutStringCentered(m.canvas, startY+i, item, termglStyle)
+	}
+
+	startY = startY + len(termglCItems) + 1
+	externalStyle := canvas.NewCell(' ', canvas.Magenta)
+	for i, item := range externalItems {
+		draw.PutStringCentered(m.canvas, startY+i, item, externalStyle)
 	}
 
 	draw.PutStringCentered(m.canvas, height-2, "[Q] Quit  [Esc] Back to Menu", canvas.NewCell(' ', canvas.White))
@@ -803,13 +853,6 @@ func (m *model) renderKitty() {
 		return
 	}
 
-	// Check if Kitty is supported
-	if !canvas.IsKittySupported() {
-		draw.PutString(m.canvas, 2, 5, "Kitty protocol not detected.", canvas.NewCell(' ', canvas.Red))
-		draw.PutString(m.canvas, 2, 6, "Supported terminals: Kitty, WezTerm, Ghostty", canvas.NewCell(' ', canvas.White))
-		draw.PutString(m.canvas, 2, 8, "Rendering preview to canvas instead:", canvas.NewCell(' ', canvas.Yellow))
-	}
-
 	// Clear and draw to Kitty backend
 	m.kitty.Clear()
 
@@ -855,22 +898,31 @@ func (m *model) renderKitty() {
 		m.kitty.DrawLine(cx, cy, x2, y2, color.RGBA{R: 255, G: 255, B: 0, A: 255})
 	}
 
-	// Show preview on canvas (approximate)
-	draw.PutString(m.canvas, 2, 10, "Kitty renders true pixels (160x96)", canvas.NewCell(' ', canvas.Cyan))
-	draw.PutString(m.canvas, 2, 11, "Canvas shows character approximation:", canvas.NewCell(' ', canvas.White))
+	// Check if Kitty is supported and flush real graphics
+	if canvas.IsKittySupported() {
+		draw.PutString(m.canvas, 2, 3, "Kitty protocol ACTIVE - rendering true pixels!", canvas.NewCell(' ', canvas.Green))
+		draw.PutString(m.canvas, 2, 4, fmt.Sprintf("Resolution: %dx%d pixels", m.kitty.Width(), m.kitty.Height()), canvas.NewCell(' ', canvas.Cyan))
 
-	// Approximate Kitty output on canvas
-	scaleX := m.kitty.Width() / (width - 4)
-	scaleY := m.kitty.Height() / (height - 15)
-	for cy := 0; cy < height-15; cy++ {
-		for cx := 0; cx < width-4; cx++ {
-			px := cx * scaleX
-			py := cy * scaleY
-			if px < m.kitty.Width() && py < m.kitty.Height() {
-				c := m.kitty.GetPixel(px, py)
-				intensity := (int(c.R) + int(c.G) + int(c.B)) / 3
-				char := draw.GradientFull.Char(uint8(intensity))
-				m.canvas.SetCell(2+cx, 13+cy, canvas.NewCell(char, canvas.RGB(c.R, c.G, c.B)))
+		// Flush the image to terminal at row 6 (after text)
+		m.kitty.FlushAt(2, 6)
+	} else {
+		draw.PutString(m.canvas, 2, 3, "Kitty protocol not detected.", canvas.NewCell(' ', canvas.Red))
+		draw.PutString(m.canvas, 2, 4, "Supported terminals: Kitty, WezTerm, Ghostty", canvas.NewCell(' ', canvas.White))
+		draw.PutString(m.canvas, 2, 5, "Showing canvas approximation:", canvas.NewCell(' ', canvas.Yellow))
+
+		// Approximate Kitty output on canvas (fallback)
+		scaleX := m.kitty.Width() / (width - 4)
+		scaleY := m.kitty.Height() / (height - 10)
+		for cy := 0; cy < height-10; cy++ {
+			for cx := 0; cx < width-4; cx++ {
+				px := cx * scaleX
+				py := cy * scaleY
+				if px < m.kitty.Width() && py < m.kitty.Height() {
+					c := m.kitty.GetPixel(px, py)
+					intensity := (int(c.R) + int(c.G) + int(c.B)) / 3
+					char := draw.GradientFull.Char(uint8(intensity))
+					m.canvas.SetCell(2+cx, 7+cy, canvas.NewCell(char, canvas.RGB(c.R, c.G, c.B)))
+				}
 			}
 		}
 	}
@@ -1358,6 +1410,125 @@ func (m *model) renderMouseDemo() {
 	}
 
 	draw.PutString(m.canvas, 2, height-1, "[Esc] Back  (Mouse tracking enabled)", canvas.NewCell(' ', canvas.White))
+}
+
+// ============================================================================
+// External Tool Demos
+// ============================================================================
+
+func (m *model) renderViu() {
+	draw.PutString(m.canvas, 2, 1, "Demo I: Viu Image Viewer (External Tool)", canvas.NewCell(' ', canvas.Yellow))
+
+	// Check if viu is available
+	_, err := exec.LookPath("viu")
+	if err != nil {
+		draw.PutString(m.canvas, 2, 4, "ERROR: viu not found in PATH", canvas.NewCell(' ', canvas.Red))
+		draw.PutString(m.canvas, 2, 6, "Install viu using one of these methods:", canvas.NewCell(' ', canvas.White))
+		draw.PutString(m.canvas, 4, 8, "cargo install viu", canvas.NewCell(' ', canvas.Cyan))
+		draw.PutString(m.canvas, 4, 9, "scoop install viu", canvas.NewCell(' ', canvas.Cyan))
+		draw.PutString(m.canvas, 2, 11, "Or run: .\\scripts\\setup.ps1", canvas.NewCell(' ', canvas.Green))
+		draw.PutString(m.canvas, 2, height-1, "[Esc] Back", canvas.NewCell(' ', canvas.White))
+		return
+	}
+
+	draw.PutString(m.canvas, 2, 4, "viu is installed and ready!", canvas.NewCell(' ', canvas.Green))
+	draw.PutString(m.canvas, 2, 6, "This demo will:", canvas.NewCell(' ', canvas.White))
+	draw.PutString(m.canvas, 4, 7, "1. Generate a plasma effect image", canvas.NewCell(' ', canvas.Cyan))
+	draw.PutString(m.canvas, 4, 8, "2. Save it to a temp file", canvas.NewCell(' ', canvas.Cyan))
+	draw.PutString(m.canvas, 4, 9, "3. Display it using viu", canvas.NewCell(' ', canvas.Cyan))
+
+	draw.PutString(m.canvas, 2, 11, "Press [Enter] to generate and view image", canvas.NewCell(' ', canvas.BrightYellow))
+	draw.PutString(m.canvas, 2, 12, "Press [Space] to view sample image (glkitty.gif)", canvas.NewCell(' ', canvas.BrightYellow))
+
+	// Show preview of what will be generated
+	draw.PutString(m.canvas, 2, 14, "Preview (canvas approximation):", canvas.NewCell(' ', canvas.White))
+
+	// Generate preview
+	t := float64(m.frame) / 30.0
+	previewW := 40
+	previewH := 6
+	for py := 0; py < previewH; py++ {
+		for px := 0; px < previewW; px++ {
+			// Plasma effect
+			x := float64(px) * 4
+			y := float64(py) * 8
+			v1 := math.Sin(x*0.05 + t)
+			v2 := math.Sin(y*0.05 + t*0.7)
+			v3 := math.Sin((x+y)*0.05 + t*0.5)
+			v := (v1 + v2 + v3 + 3) / 6
+
+			r := uint8(v * 200)
+			g := uint8((1 - v) * 150)
+			b := uint8(128 + v*127)
+			char := draw.GradientFull.Char(uint8((int(r) + int(g) + int(b)) / 3))
+			m.canvas.SetCell(2+px, 15+py, canvas.NewCell(char, canvas.RGB(r, g, b)))
+		}
+	}
+
+	draw.PutString(m.canvas, 2, height-1, "[Esc] Back  [Enter] View  [Space] Sample", canvas.NewCell(' ', canvas.White))
+}
+
+func (m *model) generateViuImage() string {
+	// Create a Kitty backend for high-res image
+	kb := canvas.NewKittyBackend(320, 200)
+
+	// Generate plasma effect
+	t := float64(m.frame) / 30.0
+	for y := 0; y < kb.Height(); y++ {
+		for x := 0; x < kb.Width(); x++ {
+			v1 := math.Sin(float64(x)*0.02 + t)
+			v2 := math.Sin(float64(y)*0.02 + t*0.7)
+			v3 := math.Sin((float64(x)+float64(y))*0.02 + t*0.5)
+			v4 := math.Sin(math.Sqrt(float64(x*x+y*y)) * 0.02)
+			v := (v1 + v2 + v3 + v4 + 4) / 8
+
+			r := uint8(v * 255)
+			g := uint8((1 - v) * 200)
+			b := uint8(128 + v*127)
+			kb.SetPixel(x, y, color.RGBA{R: r, G: g, B: b, A: 255})
+		}
+	}
+
+	// Add some circles
+	cx, cy := kb.Width()/2, kb.Height()/2
+	for i := 0; i < 5; i++ {
+		angle := t + float64(i)*math.Pi*2/5
+		ox := cx + int(60*math.Cos(angle))
+		oy := cy + int(40*math.Sin(angle))
+		kb.FillCircle(ox, oy, 20, color.RGBA{
+			R: uint8(128 + 127*math.Sin(angle)),
+			G: uint8(128 + 127*math.Cos(angle)),
+			B: uint8(200),
+			A: 255,
+		})
+	}
+
+	// Save to temp file
+	tmpDir := os.TempDir()
+	imgPath := filepath.Join(tmpDir, "termgl_viu_demo.png")
+
+	img := kb.ToImage()
+	f, err := os.Create(imgPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	if err := png.Encode(f, img); err != nil {
+		return ""
+	}
+
+	return imgPath
+}
+
+func (m *model) runViu(imagePath string) tea.Cmd {
+	return tea.ExecProcess(exec.Command("viu", imagePath), func(err error) tea.Msg {
+		return viuFinishedMsg{err: err}
+	})
+}
+
+type viuFinishedMsg struct {
+	err error
 }
 
 func main() {
