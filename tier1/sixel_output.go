@@ -3,20 +3,11 @@ package tier1
 import (
 	"bytes"
 	"image"
+
+	"github.com/charmbracelet/termgl/render"
 )
 
-// TerminalCaps holds detected terminal capabilities relevant to Sixel output.
-// This is a lightweight subset — the full TerminalCaps lives in render/.
-type TerminalCaps struct {
-	Sixel          bool
-	SixelMaxColors int
-	CellWidth      int // Cell width in pixels
-	CellHeight     int // Cell height in pixels
-	Width          int // Terminal width in cells
-	Height         int // Terminal height in cells
-}
-
-// SixelOutput implements the Encoder interface for Tier 1 (Sixel).
+// SixelOutput implements render.Encoder for Tier 1 (Sixel).
 // Architecture doc Section 6.1
 type SixelOutput struct {
 	encoder   *SixelEncoder
@@ -39,7 +30,8 @@ func NewSixelOutput(quantizer Quantizer, maxColors int, rle bool) *SixelOutput {
 }
 
 // Init sets up the encoder for the given terminal capabilities.
-func (s *SixelOutput) Init(caps TerminalCaps) error {
+// Implements render.Encoder.
+func (s *SixelOutput) Init(caps render.TerminalCaps) error {
 	if caps.CellWidth > 0 {
 		s.cellW = caps.CellWidth
 	}
@@ -57,6 +49,7 @@ func (s *SixelOutput) Init(caps TerminalCaps) error {
 
 // Encode converts a rendered frame to Sixel escape sequences.
 // Returns the string to write to stdout.
+// Implements render.Encoder.
 func (s *SixelOutput) Encode(frame *image.NRGBA) string {
 	s.buf.Reset()
 
@@ -92,6 +85,7 @@ func (s *SixelOutput) EncodeWithCursor(frame *image.NRGBA, row, col int) string 
 
 // InternalResolution returns the pixel resolution the rasterizer should render at.
 // Sixel renders at pixel resolution based on cell dimensions.
+// Implements render.Encoder.
 func (s *SixelOutput) InternalResolution(termCols, termRows int) (int, int) {
 	return termCols * s.cellW, termRows * s.cellH
 }

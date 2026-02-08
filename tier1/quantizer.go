@@ -170,3 +170,13 @@ func clampF(v, lo, hi float64) float64 {
 	}
 	return v
 }
+
+// GetBayer4x4 returns the Bayer 4x4 threshold value at the given pixel position.
+func GetBayer4x4(x, y int) float64 {
+	return bayer4x4[y%4][x%4]
+}
+
+// GetBayer8x8 returns the Bayer 8x8 threshold value at the given pixel position.
+func GetBayer8x8(x, y int) float64 {
+	return bayer8x8[y%8][x%8]
+}
