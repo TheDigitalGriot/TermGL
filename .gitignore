@@ -1,3 +1,9 @@
+# Binaries
+*.exe
+
+# Test artifacts
+test_output.png
+
 # Reference and documentation directories
 ref/
 docs/
